@@ -1,4 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
+import {
+  forgeRuntimeConfigured,
+  getForgeSession,
+  onForgeAuthStateChange,
+  requestForgeGeneration,
+  signInToForge,
+  signOutOfForge,
+} from "./forge-runtime";
 
 /*
   ANVIL  by Prompted Forge  (v6)
@@ -256,12 +264,6 @@ const LEVER_CHECKLIST = {
   ],
 };
 const LEVER_CHECKLIST_STORAGE_KEY = "anvil_lever_checklist_checked";
-// Interim access gate, session-only on purpose so it does not silently persist
-// past a closed tab. Remove alongside the api/generate.js check once real auth ships.
-const ACCESS_CODE_STORAGE_KEY = "anvil_access_code";
-function getStoredAccessCode() {
-  try { return window.sessionStorage.getItem(ACCESS_CODE_STORAGE_KEY) || ""; } catch (e) { return ""; }
-}
 
 // Segment builder (WHAT, WHO, WHY). Milestone 1 only: capture the three input
 // layers and hold them in memory, shaped to match the segment entity in the
@@ -362,47 +364,6 @@ const PRESETS = {
   },
 };
 
-// callClaude (patched for our own backend)
-// Posts to /api/generate instead of the Anthropic URL directly, and reads data.text.
-// Because /api is served from the same Vercel project as the app, there is no CORS or key in the browser.
-async function callClaude(prompt, maxTokens = 1500, system = null) {
-  const TIMEOUT_MS = 70000; // stay above the server's 60s maxDuration so its own timeout, if any, surfaces first
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let res;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    try {
-      res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-app-passcode": getStoredAccessCode() },
-        body: JSON.stringify({ prompt, max_tokens: maxTokens, ...(system ? { system } : {}) }),
-        signal: controller.signal,
-      });
-    } catch (netErr) {
-      if (netErr.name === "AbortError") {
-        if (attempt === 0) continue;
-        throw new Error("Request timed out. The server took too long to respond. Try again.");
-      }
-      if (attempt === 0) { await new Promise((r) => setTimeout(r, 1200)); continue; }
-      throw new Error("Network error. Check your connection and try again.");
-    } finally {
-      clearTimeout(timer);
-    }
-    if (!res.ok) {
-      if (res.status === 401) {
-        try { window.sessionStorage.removeItem(ACCESS_CODE_STORAGE_KEY); } catch (e) {}
-        throw new Error("Incorrect access code. Refresh the page and enter it again.");
-      }
-      const transient = [429, 500, 502, 503, 529].includes(res.status);
-      if (transient && attempt === 0) { await new Promise((r) => setTimeout(r, 1200)); continue; }
-      let detail = "";
-      try { detail = (await res.json()).error || ""; } catch (e) {}
-      throw new Error("Request failed (" + res.status + (res.status === 429 ? ", rate limited" : res.status === 529 ? ", overloaded" : "") + ")" + (detail ? ": " + detail : ""));
-    }
-    const data = await res.json();
-    return data.text || "";
-  }
-}
 function repairJSON(t) {
   let inStr = false, esc = false;
   const stack = [];
@@ -557,10 +518,30 @@ const OutcomeAdder = ({ onAdd }) => {
 
 
 export default function App() {
-  // Interim access gate. Session-only: closing the tab clears it, matching the
-  // fact this is a stopgap ahead of real auth, not a persistent login.
-  const [accessCode, setAccessCode] = useState(() => getStoredAccessCode());
-  const [accessCodeInput, setAccessCodeInput] = useState("");
+  const [forgeSession, setForgeSession] = useState(null);
+  const [forgeAuthLoading, setForgeAuthLoading] = useState(true);
+  const [forgeAuthEmail, setForgeAuthEmail] = useState("");
+  const [forgeAuthPassword, setForgeAuthPassword] = useState("");
+  const [forgeAuthError, setForgeAuthError] = useState("");
+  useEffect(() => {
+    let mounted = true;
+    getForgeSession()
+      .then((session) => {
+        if (mounted) setForgeSession(session);
+      })
+      .finally(() => {
+        if (mounted) setForgeAuthLoading(false);
+      });
+    const unsubscribe = onForgeAuthStateChange((session) => {
+      if (!mounted) return;
+      setForgeSession(session);
+      setForgeAuthLoading(false);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
   const [mode, setMode] = useState("guided");
   const [intake, setIntake] = useState({ core: "", niche: "", offer: "", audience: "", struggle: "", dream: "", hesitation: "", proof: "", corpus: "", brandName: "", domain: "", objective: "Lead generation", leadOffer: "", voice: "Plain & credible", regulated: false, awareness: "" });
   const [platform, setPlatform] = useState("Facebook");
@@ -725,7 +706,7 @@ ${researchTask}
 Be thorough, you have room here. Use up to 5 items per array where you have real, specific material, fewer if you would be padding. Return ONLY valid JSON, no fences: escape any quote marks inside a string as \", and never put a literal line break inside a string value.
 {"confidence":"high|medium|low","coverageNote":"","painPoints":[{"text":"","type":"psychological|physiological|social|measurable","frequency":"high|medium|low","quote":"<=20 words or empty, the words only, no surrounding quote marks"}],"relationalImpact":[""],"desiredOutcomes":[""],"coreWound":"","fears":[""],"beliefs":[""],"constraints":{"Money":"","Time":"","Effort":""},"objections":[""],"priorSolutions":[{"tried":"","whyFailed":""}],"wontDo":[""],"villain":"","secondaryGain":"","proofTrusted":[""],"proofGaps":[""],"marketAngles":[{"angle":"","saturation":"high|medium|low"}],"voiceSamples":[""]}`;
       setAvatarStage("research");
-      const researchOut = await callClaude(researchPrompt);
+      const researchOut = await requestForgeGeneration(researchPrompt);
       const research = parseJSON(researchOut);
 
       // Call 2: synthesis. Takes the structured research as input and writes the final
@@ -743,7 +724,7 @@ Reframe every field for THIS market, not generic infomarketing. The villain is a
 You have real room here: up to 4 items per array, and a phrase can run a full sentence when it earns its place. Do not pad or invent to fill space. Return ONLY valid JSON, no fences: escape any quote marks inside a string as \", and never put a literal line break inside a string value.
 {"confidence":"high|medium|low","coverage":"one line on corpus vs inference","pains":[{"text":"","type":"psychological|physiological|social|measurable","frequency":"high|medium|low","quote":"<=20 words or empty, the words only, no surrounding quote marks"}],"relationalImpact":["how the problem shows up with staff, family, reputation, or customers"],"desire":"the promised land in one line","dreamOutcomes":["concrete, specific outcomes if it were fully solved"],"coreWound":"","fears":["deep, mostly unspoken fears"],"beliefs":[""],"constraints":{"Money":"","Time":"","Effort":""},"objections":[""],"triedBefore":[{"tried":"a prior solution they tried","whyFailed":"why it let them down"}],"wontDo":["what they refuse to do to fix it"],"villain":"the outside force they blame, a market force or system, not a person","secondaryGain":"what they quietly lose or give up by solving it","proofTrusted":[""],"proofGaps":[""],"marketAngles":[{"angle":"","saturation":"high|medium|low"}],"voice":[""]}`;
       setAvatarStage("build");
-      const out = await callClaude(synthesisPrompt, 2400);
+      const out = await requestForgeGeneration(synthesisPrompt, 2400);
       setAvatar(parseJSON(out)); markDone("avatar"); scrollAvatar();
     } catch (e) { setError("Could not build the avatar. " + ((e && e.message) || "Unknown error") + ". Try again, or switch to Expert mode to skip the avatar."); }
     finally { setBusy(""); setAvatarStage(""); }
@@ -768,7 +749,7 @@ Per block, 1 to 3 sentences in the market's own language:
 - Conditions: one CTA wrapper that matches the objective.
 Return ONLY JSON, no fences:
 {"Pain":"","Promise":"","Proof":"","Constraints":"","Curiosity":"","Conditions":"","notes":{"Pain":"","Promise":"","Proof":"","Constraints":"","Curiosity":"","Conditions":""}}`;
-      const out = await callClaude(prompt);
+      const out = await requestForgeGeneration(prompt);
       const j = parseJSON(out);
       setBlocks({ Pain: j.Pain || "", Promise: j.Promise || "", Proof: j.Proof || "", Constraints: j.Constraints || "", Curiosity: j.Curiosity || "", Conditions: j.Conditions || "" });
       setNotes(j.notes || {});
@@ -789,7 +770,7 @@ MARKET: ${intake.audience || "infer"}
 ${objectiveLine()}
 Blocks: Pain, Promise, Proof, Constraints, Curiosity (name a mechanism), Conditions (a CTA wrapper matching the objective).
 Return ONLY JSON: {"Pain":"","Promise":"","Proof":"","Constraints":"","Curiosity":"","Conditions":""}`;
-      const out = await callClaude(prompt);
+      const out = await requestForgeGeneration(prompt);
       const j = parseJSON(out);
       setBlocks({ Pain: j.Pain || "", Promise: j.Promise || "", Proof: j.Proof || "", Constraints: j.Constraints || "", Curiosity: j.Curiosity || "", Conditions: j.Conditions || "" });
       markDone("blocks");
@@ -831,7 +812,7 @@ Return ONLY valid JSON, no fences: escape any quote marks inside a string as \",
 ${claimsContext}
 ${proofOnHand}`;
       const system = [{ type: "text", text: systemText, cache_control: { type: "ephemeral" } }];
-      const out = await callClaude(prompt, 1800, system);
+      const out = await requestForgeGeneration(prompt, 1800, system);
       const j = parseJSON(out);
       setProofPairing(Array.isArray(j.pairings) ? j.pairings.slice(0, 4) : []);
       markDone("proof");
@@ -867,7 +848,7 @@ For an Experience or Belief level objection, write a dissolve in three short par
 
 Return ONLY valid JSON, no fences: escape any quote marks inside a string as \", and never put a literal line break inside a string value.
 {"constraints":[{"objection":"the real objection or belief, in their words","level":"Experience|Belief|Value|Identity","strategy":"dissolve|sidestep","acknowledge":"","wedge":"","elaborate":"","sidestep":""}]}`;
-      const out = await callClaude(prompt, 1800);
+      const out = await requestForgeGeneration(prompt, 1800);
       const j = parseJSON(out);
       setConstraintDissolve(Array.isArray(j.constraints) ? j.constraints.slice(0, 4) : []);
       markDone("constraints");
@@ -904,7 +885,7 @@ Also name up to 2 characterizations: a plain, specific name for a mechanism or s
 
 Return ONLY valid JSON, no fences: escape any quote marks inside a string as \", and never put a literal line break inside a string value.
 {"angles":[{"quadrantId":"one of the 4 ids above","angle":"the angle, one to two sentences"}],"characterizations":[{"name":"the short name","description":"one sentence on what it names and why it fits"}]}`;
-      const out = await callClaude(prompt, 1800);
+      const out = await requestForgeGeneration(prompt, 1800);
       const j = parseJSON(out);
       setCuriosityAngles(Array.isArray(j.angles) ? j.angles.slice(0, 4) : []);
       setCharacterizations(Array.isArray(j.characterizations) ? j.characterizations.slice(0, 2) : []);
@@ -942,7 +923,7 @@ Never invent a statistic, a study, a cited research finding, or a named authorit
 
 Return ONLY valid JSON, no fences: escape any quote marks inside a string as \", and never put a literal line break inside a string value.
 {"angles":[{"familyId":"one of the 9 ids above","subtype":"the subtype chosen","angle":"the hook, one to two sentences"}]}`;
-      const out = await callClaude(prompt, 1800);
+      const out = await requestForgeGeneration(prompt, 1800);
       const j = parseJSON(out);
       setAngleMultiplication(Array.isArray(j.angles) ? j.angles.slice(0, 9) : []);
       markDone("angles");
@@ -988,7 +969,7 @@ Do not use a Taboo Solution frame, a shock or taboo characterization, or an idea
 
 Return ONLY valid JSON, no fences: escape any quote marks inside a string as \", and never put a literal line break inside a string value.
 {"intuitionPumps":[{"type":"natural|mechanical|force|association","metaphor":"one to two sentences"}],"evocativeNames":[{"level":"descriptive|evocative|abstract","name":"the name"}],"antiConstraintNames":[{"objection":"the objection answered","name":"the name"}]}`;
-      const out = await callClaude(prompt, 1800);
+      const out = await requestForgeGeneration(prompt, 1800);
       const j = parseJSON(out);
       setIntuitionPumps(Array.isArray(j.intuitionPumps) ? j.intuitionPumps.slice(0, 4) : []);
       setEvocativeNames(Array.isArray(j.evocativeNames) ? j.evocativeNames.slice(0, 3) : []);
@@ -1024,7 +1005,7 @@ Then build a Promise Ladder with the same 4 rungs, mirroring the Pain Chain rung
 
 Return ONLY valid JSON, no fences: escape any quote marks inside a string as \", and never put a literal line break inside a string value.
 {"painChain":[{"rung":"one of the 4 ids above","text":"one to two sentences"}],"promiseLadder":[{"rung":"one of the 4 ids above","text":"one to two sentences"}]}`;
-      const out = await callClaude(prompt, 1800);
+      const out = await requestForgeGeneration(prompt, 1800);
       const j = parseJSON(out);
       setPainChain(Array.isArray(j.painChain) ? j.painChain.slice(0, 4) : []);
       setPromiseLadder(Array.isArray(j.promiseLadder) ? j.promiseLadder.slice(0, 4) : []);
@@ -1055,7 +1036,7 @@ Hard rule regardless of voice: never invent a deadline, a limited quantity, a gu
 
 Return ONLY valid JSON, no fences: escape any quote marks inside a string as \", and never put a literal line break inside a string value.
 {"conditions":[{"typeId":"one of the 5 ids above","text":"the real, specific sentence, or empty if gap is true","gap":false,"askFor":"the specific question to ask, or empty if gap is false"}]}`;
-      const out = await callClaude(prompt, 1800);
+      const out = await requestForgeGeneration(prompt, 1800);
       const j = parseJSON(out);
       setConditionsResult(Array.isArray(j.conditions) ? j.conditions.slice(0, 5) : []);
       markDone("conditions");
@@ -1098,7 +1079,7 @@ Then write one closing sentence in biggestLever naming which single factor is th
 
 Return ONLY valid JSON, no fences: escape any quote marks inside a string as \", and never put a literal line break inside a string value.
 {"factors":[{"factorId":"one of the 5 ids above","assessment":"the assessment, or empty if gap is true","suggestion":"the concrete suggestion, or empty if gap is true","gap":false,"askFor":"the specific question, or empty if gap is false"}],"biggestLever":"one closing sentence"}`;
-      const out = await callClaude(prompt, 1800);
+      const out = await requestForgeGeneration(prompt, 1800);
       const j = parseJSON(out);
       setOfferStrength(Array.isArray(j.factors) ? j.factors.slice(0, 5) : []);
       setOfferStrengthLever(typeof j.biggestLever === "string" ? j.biggestLever : "");
@@ -1163,7 +1144,7 @@ Return between 2 and 6 personas, only as many as actually pass the gate. Fewer s
 
 Return ONLY valid JSON, no fences: escape any quote marks inside a string as \", and never put a literal line break inside a string value.
 {"personas":[{"name":"...","description":"one sentence","outcomeName":"the exact outcome name from the list above","demographics":{"groupId":"one exact value from that group's list"},"facets":[{"familyId":"...","value":"one exact value from that family's list"}]}]}`;
-      const out = await callClaude(prompt, 2000);
+      const out = await requestForgeGeneration(prompt, 2000);
       const j = parseJSON(out);
       const grounded = (Array.isArray(j.personas) ? j.personas : []).map((p) => groundPersona(p, segmentMap)).filter(Boolean).slice(0, 6);
       setSegmentMap((s) => ({ ...s, personas: grounded }));
@@ -1183,7 +1164,7 @@ Return ONLY valid JSON, no fences: escape any quote marks inside a string as \",
     try {
       const list = TEMPLATES.map((t) => `${t.id}. ${t.name} - ${t.when}`).join("\n");
       const prompt = `Pick the single best ad template for this offer.\nOFFER: ${intake.offer}\nMARKET: ${intake.audience || "infer"}\n${blocks.Curiosity ? "ANGLE: " + blocks.Curiosity : ""}\nTEMPLATES:\n${list}\n${voiceLine()}\nReturn ONLY JSON: {"id": <number>, "reason": "<one sentence>"}`;
-      const out = await callClaude(prompt);
+      const out = await requestForgeGeneration(prompt);
       const j = parseJSON(out);
       setRecommended({ id: j.id, reason: j.reason });
       setTemplateId("auto");
@@ -1210,7 +1191,7 @@ Spread across DIFFERENT archetypes, do not repeat one. Draw from: free audit or 
 
 Return ONLY JSON, no fences:
 {"offers":[{"name":"the offer, specific and concrete","type":"the archetype","why":"why it fits this niche, one line","bridge":"how it naturally leads to the core paid offer, one line","friction":"low|medium|high"}]}`;
-      const out = await callClaude(prompt);
+      const out = await requestForgeGeneration(prompt);
       const j = parseJSON(out);
       setOffers(Array.isArray(j.offers) ? j.offers.slice(0, 6) : []);
       markDone("offers");
@@ -1220,10 +1201,10 @@ Return ONLY JSON, no fences:
 
   function useManualOffer() {
     if (!manualOffer.trim()) { setError("Type your front-door offer first."); return; }
-    useOffer({ name: manualOffer.trim(), type: "your own offer" });
+    applyOffer({ name: manualOffer.trim(), type: "your own offer" });
   }
 
-  function useOffer(o) {
+  function applyOffer(o) {
     setIntake((s) => ({ ...s, offer: o.name, audience: s.audience || s.niche, leadOffer: o.name, objective: "Lead generation" }));
     setChosenOffer(o.name);
     setAvatar(null);
@@ -1283,7 +1264,7 @@ Apply Polish and use the customer's real voice. Clarity comes first. Use only th
 Return ONLY JSON, no fences:
 {"primaryText":[{"block":"Curiosity","text":"..."}],"headline":"","description":"","cta":"${ctaList[0]}","imageHeadline":"","imageSubline":"","craves":{"Clear":4,"Relevant":5,"Accurate":4,"Visual":5,"Expressive":4,"Specific":5},"hooks":["","",""],"creativeBrief":""}
 craves 1-5. Exactly 3 hooks.`;
-      const out = await callClaude(prompt);
+      const out = await requestForgeGeneration(prompt);
       setResults((r) => [{ id: Date.now(), ...makeAd(parseJSON(out)) }, ...r]);
       markDone("generate"); scrollResults();
     } catch (e) { setError("Generation failed. " + ((e && e.message) || "Came back malformed") + ". Try again."); }
@@ -1312,7 +1293,7 @@ Produce a complete asset set Google can mix and match:
 - 2 display paths, each ${PATH_MAX} characters or fewer.
 Respect every character limit. Return ONLY JSON, no fences:
 {"headlines":["",""],"descriptions":["","","",""],"paths":["",""]}`;
-      const out = await callClaude(prompt);
+      const out = await requestForgeGeneration(prompt);
       const j = parseJSON(out);
       const awStage = AWARENESS_STAGES.find((s) => s.id === intake.awareness);
       setResults((r) => [{
@@ -1361,7 +1342,7 @@ Each variant is a full ad. primaryText first segment is the Curiosity hook under
 
 Return ONLY JSON, no fences:
 {"variable":"${axis}","hypothesis":"one line: what we expect to learn","metric":"the first number to watch","nextTest":"what to test after a winner","variants":[{"label":"A","note":"","primaryText":[{"block":"Curiosity","text":""}],"headline":"","description":"","cta":"${ctaList[0]}","imageHeadline":"","imageSubline":""}]}`;
-      const out = await callClaude(prompt);
+      const out = await requestForgeGeneration(prompt);
       const j = parseJSON(out);
       const variants = (Array.isArray(j.variants) ? j.variants : []).map((v, i) => ({
         id: Date.now() + i + 1, ...makeAd(v, { label: v.label || String.fromCharCode(65 + i), note: v.note || "", isControl: i === 0 }),
@@ -1392,30 +1373,79 @@ Return ONLY JSON, no fences:
   ];
   const conf = avatar && CONF[avatar.confidence] ? CONF[avatar.confidence] : CONF.low;
 
-  if (!accessCode) {
+  if (forgeAuthLoading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f6f6f7", fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", color: "#141414" }}>
+        Reading your Forge session…
+      </div>
+    );
+  }
+
+  if (!forgeSession) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f6f6f7", fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            const v = accessCodeInput.trim();
-            if (!v) return;
-            try { window.sessionStorage.setItem(ACCESS_CODE_STORAGE_KEY, v); } catch (err) {}
-            setAccessCode(v);
+            setForgeAuthError("");
+            setForgeAuthLoading(true);
+            try {
+              const session = await signInToForge(
+                forgeAuthEmail,
+                forgeAuthPassword,
+              );
+              setForgeSession(session);
+            } catch (authError) {
+              setForgeAuthError(
+                authError instanceof Error
+                  ? authError.message
+                  : "Forge sign-in failed.",
+              );
+            } finally {
+              setForgeAuthLoading(false);
+            }
           }}
           style={{ background: "#fff", border: "1px solid #ececef", borderRadius: 14, padding: 28, width: 320, boxSizing: "border-box" }}
         >
           <h2 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 800, color: "#141414" }}>Anvil</h2>
-          <p style={{ margin: "0 0 16px", fontSize: 13, color: "#6b6b70", lineHeight: 1.5 }}>This build is not public yet. Enter the access code to continue.</p>
+          <p style={{ margin: "0 0 16px", fontSize: 13, color: "#6b6b70", lineHeight: 1.5 }}>
+            Sign in with your existing Prompted Forge account. Access,
+            generation limits, and model capacity are governed by Forge.
+          </p>
+          {!forgeRuntimeConfigured ? (
+            <p style={{ margin: "0 0 12px", fontSize: 12, color: "#8a1c22", lineHeight: 1.45 }}>
+              Forge runtime is not configured for this deployment.
+            </p>
+          ) : null}
           <input
-            type="password"
+            type="email"
             autoFocus
-            value={accessCodeInput}
-            onChange={(e) => setAccessCodeInput(e.target.value)}
-            placeholder="Access code"
+            autoComplete="email"
+            value={forgeAuthEmail}
+            onChange={(e) => setForgeAuthEmail(e.target.value)}
+            placeholder="Forge email"
             style={{ width: "100%", boxSizing: "border-box", border: "1px solid #e2e2e6", borderRadius: 8, padding: "10px 12px", fontSize: 14, marginBottom: 12 }}
           />
-          <button type="submit" style={{ width: "100%", fontFamily: "inherit", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "10px 14px", cursor: "pointer", border: "1px solid #141414", background: "#141414", color: "#fff" }}>Continue</button>
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={forgeAuthPassword}
+            onChange={(e) => setForgeAuthPassword(e.target.value)}
+            placeholder="Password"
+            style={{ width: "100%", boxSizing: "border-box", border: "1px solid #e2e2e6", borderRadius: 8, padding: "10px 12px", fontSize: 14, marginBottom: 12 }}
+          />
+          {forgeAuthError ? (
+            <p role="alert" style={{ margin: "0 0 12px", fontSize: 12, color: "#8a1c22", lineHeight: 1.45 }}>
+              {forgeAuthError}
+            </p>
+          ) : null}
+          <button
+            type="submit"
+            disabled={!forgeRuntimeConfigured || forgeAuthLoading}
+            style={{ width: "100%", fontFamily: "inherit", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "10px 14px", cursor: "pointer", border: "1px solid #141414", background: "#141414", color: "#fff", opacity: !forgeRuntimeConfigured || forgeAuthLoading ? 0.55 : 1 }}
+          >
+            {forgeAuthLoading ? "Signing in…" : "Sign in to Forge"}
+          </button>
         </form>
       </div>
     );
@@ -1436,7 +1466,28 @@ Return ONLY JSON, no fences:
       <header style={{ background: "#141414", color: "#fff", padding: "26px 22px 30px" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <div style={{ display: "flex", gap: 5, marginBottom: 14 }}>{BLOCK_NAMES.map((n) => <span key={n} title={n} style={{ width: 26, height: 6, borderRadius: 2, background: BLOCKS[n].color }} />)}</div>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".22em", textTransform: "uppercase", color: "#9a9aa0" }}>Prompted Forge</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".22em", textTransform: "uppercase", color: "#9a9aa0" }}>Prompted Forge</div>
+            <button
+              type="button"
+              onClick={async () => {
+                setForgeAuthError("");
+                try {
+                  await signOutOfForge();
+                  setForgeSession(null);
+                } catch (authError) {
+                  setForgeAuthError(
+                    authError instanceof Error
+                      ? authError.message
+                      : "Forge sign-out failed.",
+                  );
+                }
+              }}
+              style={{ fontFamily: "inherit", fontSize: 11, fontWeight: 700, borderRadius: 7, padding: "6px 9px", cursor: "pointer", border: "1px solid #45454a", background: "transparent", color: "#d4d4d8" }}
+            >
+              Sign out
+            </button>
+          </div>
           <h1 style={{ margin: "4px 0 0", fontSize: 38, fontWeight: 800, letterSpacing: "-.03em", lineHeight: 1.02 }}>Anvil</h1>
           <p style={{ margin: "10px 0 0", maxWidth: 700, color: "#c9c9ce", fontSize: 14.5, lineHeight: 1.5 }}>
             From your offer to finished ads, A/B test sets, or a full search ad asset set, tuned to your objective and voice, previewed per placement. Built for Meta, TikTok, YouTube Shorts, and Google Search.
@@ -1500,7 +1551,7 @@ Return ONLY JSON, no fences:
                         {o.type && <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "#8E3B8E", margin: "4px 0 6px" }}>{o.type}</div>}
                         {o.why && <div style={{ fontSize: 12.5, color: "#3a3a3e", lineHeight: 1.45, marginBottom: 4 }}><strong>Why it fits:</strong> {o.why}</div>}
                         {o.bridge && <div style={{ fontSize: 12.5, color: "#3a3a3e", lineHeight: 1.45, marginBottom: 8 }}><strong>Leads to your core:</strong> {o.bridge}</div>}
-                        <button style={{ ...btnGhost, padding: "7px 12px", fontSize: 12.5 }} onClick={() => useOffer(o)}>{chosen ? "Selected · loaded below" : "Use this offer"}</button>
+                        <button style={{ ...btnGhost, padding: "7px 12px", fontSize: 12.5 }} onClick={() => applyOffer(o)}>{chosen ? "Selected · loaded below" : "Use this offer"}</button>
                       </div>
                     );
                   })}
