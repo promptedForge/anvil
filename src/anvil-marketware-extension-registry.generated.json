@@ -1,0 +1,270 @@
+{
+  "schemaVersion": "forge_market.anvil_extension_registry.v1",
+  "registryId": "forge_market.anvil_extensions.2026-09-06",
+  "registryOwner": "forge_market",
+  "sourceRef": "src/lib/bridge/anvil-marketware-extension-registry.json",
+  "sourceTense": "source_only_contract",
+  "projectionPosture": "canonical_source_with_generated_product_projection",
+  "productBinding": {
+    "primitiveKey": "market_primitive.creative_strategy_anvil.v1",
+    "baselineWareKey": "ware.anvil_creative_strategy.v1",
+    "baselineOfferingKey": "offering.anvil.dream50_trial.v1",
+    "sourceRepo": "PromptedForge/anvil",
+    "primaryProductSurface": "product_anvil_primary_interface",
+    "forgeProjectionRoutes": [
+      "/cmd/market",
+      "/operative/anvil"
+    ]
+  },
+  "access": {
+    "discovery": "automatic_within_scoped_anvil_product",
+    "accessMode": "included_with_existing_anvil_baseline_access",
+    "separateExtensionEntitlementRequired": false,
+    "existingAnvilAccessRequired": true,
+    "includedScopeRefs": [
+      "dom_anvil_vendor",
+      "site_anvil_marketware",
+      "human.slack.U0923HV7RDG",
+      "ai_operator.vendor.anvil",
+      "organization_sitter:domain.vendor.anvil"
+    ],
+    "identityAuthority": "forge_supabase_auth",
+    "providerAuthorizationInherited": false,
+    "federationAdminGranted": false,
+    "marketStewardGranted": false
+  },
+  "nativeWorkflow": {
+    "workflowKey": "forge_market.anvil_extension_planning_draft.v1",
+    "artifactRegistryOwner": "document_artifact_registry",
+    "reviewReceiptOwner": "forge_review_receipts",
+    "entitlementOwner": "forge_market_entitlements",
+    "generationOwner": "forge_ai_generation_quota_reservations",
+    "providerCapacityOwner": "forge_ai_operator_capacity_policy",
+    "states": [
+      "planning",
+      "copy_candidate_ready",
+      "human_review_required",
+      "provider_handoff_candidate",
+      "provider_effect_held"
+    ],
+    "defaultMode": "local_draft_only",
+    "futureProviderTargetState": "provider_specific_held_target",
+    "copyReviewRequired": true,
+    "budgetPolicyRequiredBeforeProviderHandoff": true,
+    "destructiveReplacementAllowed": false,
+    "effectAuthorityMinted": false,
+    "donorRayTranslation": {
+      "sourceStatus": "verified_supplemental_packet_patterns_only_no_runtime",
+      "translatedMechanics": [
+        "dry run becomes local draft only by default",
+        "paused campaign is eligible only as a future Meta target and remains a provider POST effect",
+        "budget range checks become a required pre-handoff policy receipt",
+        "copy guards become a subject, digest, and scope-bound Forge review receipt",
+        "exact actor and organization context bind every draft revision",
+        "checkpointed progress requires corruption-visible, atomic future storage before persistence",
+        "future handoff is single-recipient and lease-bound with no cross-scope broadcast"
+      ],
+      "excludedMechanics": [
+        "donor runtime or dependency installation",
+        "direct Marketing API execution",
+        "generic apply or execute toggle",
+        "destructive replace-ads behavior",
+        "legacy LinkedIn v2 or ugcPosts requests",
+        "shared credential fallback or acknowledgement without permission re-read",
+        "scraped member data, CRM enrichment, export, or external feed redistribution",
+        "broadcast handoff or silent corrupt-checkpoint recovery"
+      ],
+      "sourcePacketRef": "audit-logs/cycles/2026-09-06_anvil-prompts-marketware/native-donor-provider-review.json",
+      "sourcePacketSha256": "dbacbd84aad780848667c6804cc7c67c2e644c95a08217c1564c8830f78f9e07"
+    }
+  },
+  "extensions": [
+    {
+      "extensionKey": "anvil.extension.meta_ads_management.v1",
+      "wareKey": "ware.anvil.extension.meta_ads_management.v1",
+      "offeringKey": "offering.anvil.extension.meta_ads_management.included.v1",
+      "label": "Facebook & Meta Ads",
+      "shortLabel": "Meta Ads",
+      "platformSelector": "Facebook",
+      "category": "provider_integration",
+      "capabilityRef": "meta_ads_management",
+      "marketStatus": "source_only",
+      "availability": {
+        "priceMode": "free",
+        "tangibleAmountDue": 0,
+        "firecoinAmountDue": 0,
+        "exactPriceAuthority": "current_user_directive_2026_09_06",
+        "autoDiscovered": true,
+        "separateActivationReceiptRequired": false
+      },
+      "workSurface": {
+        "state": "local_planning_and_copy_workbench",
+        "availableActions": [
+          "select Facebook placement",
+          "shape audience, offer, objective, and voice",
+          "generate ad copy and A/B test candidates through the existing Anvil generation membrane",
+          "review campaign readiness before provider handoff"
+        ],
+        "providerActionsAvailable": false
+      },
+      "providerReadiness": {
+        "provider": "meta_marketing_api",
+        "connection": "unverified",
+        "authorization": "not_granted",
+        "accountSelection": "unresolved",
+        "execution": "held",
+        "requiredReceipts": [
+          "current Meta account connection readback",
+          "scoped provider authorization",
+          "selected ad-account receipt",
+          "campaign mutation and spend authority",
+          "post-write provider readback"
+        ]
+      },
+      "effectBoundary": {
+        "networkRequestPerformed": false,
+        "campaignCreated": false,
+        "campaignUpdated": false,
+        "campaignDeleted": false,
+        "campaignPublished": false,
+        "spendAuthorized": false
+      },
+      "futureConnectorContract": {
+        "documentationSourceIds": [
+          "meta-official-postman"
+        ],
+        "planningFields": [
+          "exact_ad_account",
+          "page_identity",
+          "campaign_objective",
+          "account_relationship",
+          "currency",
+          "budget_bounds",
+          "creative_digest"
+        ],
+        "permissionOrRoleGates": [
+          "ads_read",
+          "ads_management",
+          "Standard Access for own-account management as applicable",
+          "Advanced Access for other-account management as applicable"
+        ],
+        "protocolGates": [
+          "supported Marketing API version selected at connector admission",
+          "exact ad-account and Page readback",
+          "PAUSED creation acknowledged as provider POST effect"
+        ],
+        "prohibitedDataUses": [],
+        "mutationTruth": "PAUSED creation remains a provider POST effect",
+        "eligibleFutureOperations": [
+          "create_paused_campaign"
+        ]
+      }
+    },
+    {
+      "extensionKey": "anvil.extension.linkedin_management.v1",
+      "wareKey": "ware.anvil.extension.linkedin_management.v1",
+      "offeringKey": "offering.anvil.extension.linkedin_management.included.v1",
+      "label": "LinkedIn Management",
+      "shortLabel": "LinkedIn",
+      "platformSelector": "LinkedIn",
+      "category": "provider_integration",
+      "capabilityRef": "linkedin_management",
+      "marketStatus": "source_only",
+      "availability": {
+        "priceMode": "free",
+        "tangibleAmountDue": 0,
+        "firecoinAmountDue": 0,
+        "exactPriceAuthority": "current_user_directive_2026_09_06",
+        "autoDiscovered": true,
+        "separateActivationReceiptRequired": false
+      },
+      "workSurface": {
+        "state": "local_planning_and_copy_workbench",
+        "availableActions": [
+          "select LinkedIn placement",
+          "shape audience, offer, objective, and voice",
+          "generate sponsored-post copy and A/B test candidates through the existing Anvil generation membrane",
+          "review publishing readiness before provider handoff"
+        ],
+        "providerActionsAvailable": false
+      },
+      "providerReadiness": {
+        "provider": "linkedin_api",
+        "connection": "unverified",
+        "authorization": "not_granted",
+        "accountSelection": "unresolved",
+        "execution": "held",
+        "requiredReceipts": [
+          "current LinkedIn organization or member connection readback",
+          "scoped provider authorization",
+          "selected organization or account receipt",
+          "post or campaign mutation authority",
+          "post-write provider readback"
+        ]
+      },
+      "effectBoundary": {
+        "networkRequestPerformed": false,
+        "postCreated": false,
+        "postUpdated": false,
+        "postDeleted": false,
+        "campaignCreated": false,
+        "campaignPublished": false,
+        "spendAuthorized": false
+      },
+      "futureConnectorContract": {
+        "documentationSourceIds": [
+          "linkedin-posts",
+          "linkedin-restrictions",
+          "linkedin-access"
+        ],
+        "planningFields": [
+          "author_kind",
+          "exact_author_urn",
+          "content_mode",
+          "article_fields",
+          "asset_and_copy_digest"
+        ],
+        "permissionOrRoleGates": [
+          "w_organization_social plus documented Page role for organization author",
+          "w_member_social for member author"
+        ],
+        "protocolGates": [
+          "use /rest/posts",
+          "supported YYYYMM LinkedIn-Version selected at connector admission",
+          "X-Restli-Protocol-Version 2.0.0",
+          "201 response x-restli-id readback"
+        ],
+        "prohibitedDataUses": [
+          "profile or connection scraping",
+          "member activity ingestion",
+          "CRM or lead enrichment",
+          "advertising use of community-management member data",
+          "member-data export or external social-feed redistribution"
+        ],
+        "mutationTruth": "a local planning artifact is never a published or paused provider object",
+        "eligibleFutureOperations": [
+          "create_organic_post",
+          "prepare_sponsored_content_candidate"
+        ]
+      }
+    }
+  ],
+  "runtimeReadiness": {
+    "sourceCandidate": "ready_for_root_review",
+    "forgeSourceAdmission": "pending",
+    "productProjectionAdmission": "pending",
+    "productBuildReadback": "pending",
+    "hostedReadback": "not_performed"
+  },
+  "sourceEvidence": {
+    "supplementalPacketRef": "audit-logs/cycles/2026-09-06_anvil-prompts-marketware/native-donor-provider-review.json",
+    "supplementalPacketSha256": "dbacbd84aad780848667c6804cc7c67c2e644c95a08217c1564c8830f78f9e07",
+    "officialSourceIds": [
+      "meta-official-postman",
+      "linkedin-posts",
+      "linkedin-restrictions",
+      "linkedin-access"
+    ],
+    "donorAdmission": "patterns_only_no_runtime"
+  }
+}

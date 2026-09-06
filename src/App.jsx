@@ -7,14 +7,24 @@ import {
   signInToForge,
   signOutOfForge,
 } from "./forge-runtime";
+import AnvilMarketwareExtensions from "./AnvilMarketwareExtensions.jsx";
+import {
+  PLATFORMS,
+  buildPlacementGuidance,
+  formatCopyBlocks,
+  getPrimaryTextExampleBlock,
+  isFeedPlatform,
+  isSearchPlatform,
+  toAdExportRecord,
+} from "./ad-platforms.js";
 
 /*
   ANVIL  by Prompted Forge  (v6)
   Adds campaign objective + responsive search ads.
 
   - Objective: Lead generation or Direct sale. In lead-gen mode the CTA and the
-    Conditions block default to the lead magnet (free consult, inspection, quote)
-    instead of trying to close the sale in the ad.
+    Conditions block use the supplied next step. If none is supplied, generation
+    stays neutral instead of inventing an offer.
   - Google Search now outputs a real responsive search ad: up to 15 headlines
     and 4 descriptions with character-limit checks and a SERP preview, instead
     of one headline and one description.
@@ -34,24 +44,22 @@ const BLOCKS = {
 const BLOCK_NAMES = Object.keys(BLOCKS);
 
 const TEMPLATES = [
-  { id: 1, name: "The Before & After", when: "Sharp contrast between a painful state and a dramatically better result.", opening: "Transformation contrast hook", middle: "Vivid pain state + transformation + proof", close: "Bold promise + CTA" },
-  { id: 2, name: "The Insider Reveal", when: "You have hidden or exclusive information most people don't have.", opening: "Exclusivity curiosity hook", middle: "Hidden information + proof", close: "Promise + CTA" },
-  { id: 3, name: "The Framework", when: "Market is overwhelmed by complexity and wants a clear structured path.", opening: "Complexity contrast hook", middle: "Simplicity promise + system curiosity", close: "Proof + CTA" },
-  { id: 4, name: "The Quick Win", when: "You can promise a fast, tangible result that builds momentum.", opening: "Speed-result contrast hook", middle: "Proof + mechanism curiosity", close: "Clear path + CTA" },
-  { id: 5, name: "The Industry Authority", when: "Buyer works hard but lacks recognition and wants status.", opening: "Recognition gap hook", middle: "Authority promise + benefits", close: "Timeframe + easy action CTA" },
-  { id: 6, name: "The Hidden Cost", when: "An invisible loss is draining the buyer's time, money, or potential.", opening: "Invisible pain hook", middle: "Cost revelation + solution promise", close: "Proof + urgent CTA" },
-  { id: 7, name: "The Identity Shift", when: "The buyer's self-image is blocking their results.", opening: "Identity crisis hook", middle: "Identity contrast + transformation", close: "Proof + identity CTA" },
-  { id: 8, name: "The Pattern Interrupt Question", when: "Attack a deeply held belief with one shocking question.", opening: "Perspective-shattering question", middle: "True problem revealed + solution", close: "Proof + urgency CTA" },
-  { id: 9, name: "The Overlooked Factor", when: "A missing piece explains why the buyer stays stuck despite effort.", opening: "Missing element hook", middle: "Unexpected cause + solution promise", close: "Proof + simple-solution CTA" },
-  { id: 10, name: "The Bottleneck Breakthrough", when: "One specific obstacle is why everything else has failed.", opening: "Bottleneck revelation hook", middle: "Breakthrough solution + transformation", close: "Proof + obstacle-removing CTA" },
-  { id: 11, name: "The Effortless Pivot", when: "One tiny change unlocks outsized results.", opening: "Tiny-change-big-result hook", middle: "Simplicity proof + mechanism hint", close: "Effortless implementation + CTA" },
-  { id: 12, name: "The Future Self Regret Minimizer", when: "Project the buyer forward to a decision they'll regret.", opening: "Future reflection hook", middle: "Decision fork + regret contrast", close: "Legacy choice + CTA" },
-  { id: 13, name: "The Insider-Outsider Contrast", when: "Expose the gap between how elites solve this and how others struggle.", opening: "Elite practice contrast hook", middle: "Insider access + exclusive method", close: "Identity elevation + CTA" },
-  { id: 14, name: "The Resource Maximizer", when: "Buyer is short on a scarce resource and wants more from less.", opening: "Resource constraint hook", middle: "Efficiency promise + proof", close: "Mechanism curiosity + CTA" },
+  { id: 1, name: "The Before & After", when: "Sharp contrast between a painful state and a dramatically better result.", leadBlock: "Promise", opening: "Transformation contrast hook", middle: "Vivid pain state + transformation + proof", close: "Bold promise + CTA" },
+  { id: 2, name: "The Insider Reveal", when: "You have hidden or exclusive information most people don't have.", leadBlock: "Curiosity", opening: "Exclusivity curiosity hook", middle: "Hidden information + proof", close: "Promise + CTA" },
+  { id: 3, name: "The Framework", when: "Market is overwhelmed by complexity and wants a clear structured path.", leadBlock: "Constraints", opening: "Complexity contrast hook", middle: "Simplicity promise + system curiosity", close: "Proof + CTA" },
+  { id: 4, name: "The Quick Win", when: "You can promise a fast, tangible result that builds momentum.", leadBlock: "Promise", opening: "Speed-result contrast hook", middle: "Proof + mechanism curiosity", close: "Clear path + CTA" },
+  { id: 5, name: "The Industry Authority", when: "Buyer works hard but lacks recognition and wants status.", leadBlock: "Proof", opening: "Recognition gap hook", middle: "Authority promise + benefits", close: "Timeframe + easy action CTA" },
+  { id: 6, name: "The Hidden Cost", when: "An invisible loss is draining the buyer's time, money, or potential.", leadBlock: "Pain", opening: "Invisible pain hook", middle: "Cost revelation + solution promise", close: "Proof + urgent CTA" },
+  { id: 7, name: "The Identity Shift", when: "The buyer's self-image is blocking their results.", leadBlock: "Constraints", opening: "Identity crisis hook", middle: "Identity contrast + transformation", close: "Proof + identity CTA" },
+  { id: 8, name: "The Pattern Interrupt Question", when: "Attack a deeply held belief with one shocking question.", leadBlock: "Curiosity", opening: "Perspective-shattering question", middle: "True problem revealed + solution", close: "Proof + urgency CTA" },
+  { id: 9, name: "The Overlooked Factor", when: "A missing piece explains why the buyer stays stuck despite effort.", leadBlock: "Curiosity", opening: "Missing element hook", middle: "Unexpected cause + solution promise", close: "Proof + simple-solution CTA" },
+  { id: 10, name: "The Bottleneck Breakthrough", when: "One specific obstacle is why everything else has failed.", leadBlock: "Pain", opening: "Bottleneck revelation hook", middle: "Breakthrough solution + transformation", close: "Proof + obstacle-removing CTA" },
+  { id: 11, name: "The Effortless Pivot", when: "One tiny change unlocks outsized results.", leadBlock: "Promise", opening: "Tiny-change-big-result hook", middle: "Simplicity proof + mechanism hint", close: "Effortless implementation + CTA" },
+  { id: 12, name: "The Future Self Regret Minimizer", when: "Project the buyer forward to a decision they'll regret.", leadBlock: "Pain", opening: "Future reflection hook", middle: "Decision fork + regret contrast", close: "Legacy choice + CTA" },
+  { id: 13, name: "The Insider-Outsider Contrast", when: "Expose the gap between how elites solve this and how others struggle.", leadBlock: "Curiosity", opening: "Elite practice contrast hook", middle: "Insider access + exclusive method", close: "Identity elevation + CTA" },
+  { id: 14, name: "The Resource Maximizer", when: "Buyer is short on a scarce resource and wants more from less.", leadBlock: "Constraints", opening: "Resource constraint hook", middle: "Efficiency promise + proof", close: "Mechanism curiosity + CTA" },
 ];
 
-const PLATFORMS = ["Facebook", "Instagram", "TikTok", "YouTube Shorts", "Google Search"];
-const FEED = ["Facebook", "Instagram"];
 const CTA_OPTIONS = ["Learn More", "Sign Up", "Get Offer", "Shop Now", "Subscribe", "Download", "Contact Us", "Book Now", "Get Quote"];
 const LEADGEN_CTAS = ["Book Now", "Get Quote", "Sign Up", "Contact Us", "Learn More", "Get Offer"];
 const SALES_CTAS = ["Shop Now", "Sign Up", "Subscribe", "Download", "Get Offer", "Learn More"];
@@ -64,7 +72,7 @@ const AWARENESS_STAGES = [
   { id: "problem", label: "Problem-aware", desc: "Feels the problem, does not know the solutions.", guidance: "Lead with Pain, naming the problem the way this market actually feels it, then move them toward your view of the root cause. Curiosity can introduce the mechanism. Keep the CTA soft, more learn-more than buy-now." },
   { id: "solution", label: "Solution-aware", desc: "Knows solution types, not your offer.", guidance: "Lead with Curiosity or Promise, establishing why this specific approach is the right one, differentiated from other solution types they already know about. Proof should carry real weight here." },
   { id: "product", label: "Product-aware", desc: "Knows your offer, not yet convinced.", guidance: "Lead with Promise or Proof, making this specific offer the obvious choice and building trust in it by name. The Constraints block should address the specific hesitation about choosing you, not the category." },
-  { id: "most", label: "Most aware", desc: "Ready, needs the deal and the call to action.", guidance: "Lead with the offer and Conditions. Be short and direct, most of the six blocks can compress or drop away. The call to action should be immediate and specific. Any urgency must be real, never manufactured." },
+  { id: "most", label: "Most aware", desc: "Ready, needs the deal and the call to action.", guidance: "Lead with the offer and any supplied Conditions. Be short and direct, most of the six blocks can compress or drop away. The call to action should be immediate and specific. Any urgency must be real, never manufactured." },
 ];
 // Vertical language and compliance rules, extracted from the engine into a
 // standalone config, per Breyden's call in START_HERE_Segment_Builder.md:
@@ -83,6 +91,8 @@ const AWARENESS_STAGES = [
 const UNIVERSAL_SURFACE_RULES = [
   "No em-dashes.",
   "Never use the contrastive negation-then-restate construction (any subject, not just 'it': '[X] is not A, [it/that/X] is B', in one sentence or split across two sentences, such as '[X] is not A. It is B.').",
+  "Never invent statistics, studies, authorities, testimonials, credentials, professional consensus, urgency, scarcity, guarantees, deadlines, or offer terms.",
+  "If proof, a condition, or a factual detail was not supplied, omit it or identify the gap in the creative brief instead of filling it with a plausible claim.",
 ];
 
 const VERTICAL_LANGUAGE_PROFILES = {
@@ -549,6 +559,7 @@ export default function App() {
   const [avatar, setAvatar] = useState(null);
   const [avatarStage, setAvatarStage] = useState("");
   const [blocks, setBlocks] = useState({ Pain: "", Promise: "", Proof: "", Constraints: "", Curiosity: "", Conditions: "" });
+  const [selectedAngle, setSelectedAngle] = useState({ family: "", subtype: "" });
   const [notes, setNotes] = useState({});
   const [proofPairing, setProofPairing] = useState([]);
   const [constraintDissolve, setConstraintDissolve] = useState([]);
@@ -634,27 +645,37 @@ export default function App() {
 
   const setIn = (k, v) => setIntake((s) => ({ ...s, [k]: v }));
   const markDone = (k) => { setDone(k); setTimeout(() => setDone((d) => (d === k ? "" : d)), 1800); };
-  const setBlock = (k, v) => setBlocks((b) => ({ ...b, [k]: v }));
+  const setBlock = (k, v) => {
+    setBlocks((b) => ({ ...b, [k]: v }));
+    if (k === "Curiosity") setSelectedAngle({ family: "", subtype: "" });
+  };
+  const applyCuriosityAngle = (text, family, subtype) => {
+    setBlocks((b) => ({ ...b, Curiosity: text }));
+    setSelectedAngle({ family, subtype });
+  };
   const loadPreset = (k) => PRESETS[k] && setIntake((s) => ({ ...s, ...PRESETS[k] }));
   const hasCorpus = intake.corpus.trim().length > 0;
   const corpusTrimmed = intake.corpus.length > CORPUS_CAP;
   const isLeadGen = intake.objective === "Lead generation";
-  const isSearch = platform === "Google Search";
+  const isSearch = isSearchPlatform(platform);
   const brand = intake.brandName || "Your Brand";
   const domain = (intake.domain || "yourbrand.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
   const ctaList = isLeadGen ? LEADGEN_CTAS : SALES_CTAS;
+  const hasGroundedConditions = Boolean(blocks.Conditions.trim() || intake.leadOffer.trim());
+  const hasGroundedProof = Boolean(blocks.Proof.trim() || intake.proof.trim());
 
   const activeTemplate = useMemo(() => {
     if (templateId === "auto") return recommended ? TEMPLATES.find((t) => t.id === recommended.id) : null;
     return TEMPLATES.find((t) => t.id === Number(templateId));
   }, [templateId, recommended]);
 
-  const blockText = () => Object.values(blocks).some((v) => v.trim()) ? BLOCK_NAMES.map((n) => `${n}: ${blocks[n] || "(infer)"}`).join("\n") : "(infer from the offer, and the target persona or avatar above)";
-  const placementLine = (p) => FEED.includes(p) ? `This is a ${p} feed ad. Shape it to the real fields.` : `This is a ${p} video ad; primaryText is the on-screen script and the first segment is the on-screen hook.`;
+  const blockText = () => formatCopyBlocks(blocks, BLOCK_NAMES);
   const voiceLine = () => composeVoiceRule(VERTICAL_LANGUAGE_PROFILES[intake.voice] || VERTICAL_LANGUAGE_PROFILES["Plain & credible"]);
   const complianceLine = () => intake.regulated ? composeComplianceLine(COMPLIANCE_PROFILE) : "";
   const objectiveLine = () => (isLeadGen
-    ? `OBJECTIVE: lead generation. The ad sells the NEXT STEP, not the purchase. The CTA and the Conditions block must offer the lead magnet: ${intake.leadOffer || "a free consult / inspection / quote"}. Do not try to close the sale inside the ad.`
+    ? intake.leadOffer.trim()
+      ? `OBJECTIVE: lead generation. The ad sells the supplied next step: ${intake.leadOffer.trim()}. Use that exact next step in the CTA and Conditions block. Do not add price, availability, deadline, guarantee, or other terms that were not supplied.`
+      : "OBJECTIVE: lead generation. No lead magnet or next-step offer was supplied. Use a neutral Learn More or Contact Us CTA. Leave Conditions absent and do not invent a free consultation, inspection, quote, discount, deadline, guarantee, or other offer term."
     : `OBJECTIVE: direct sale. Drive the purchase with the CTA.`) + "\n" + voiceLine() + complianceLine();
 
   // Milestone 3: awareness stage as a first-class input, alongside objective and
@@ -685,7 +706,7 @@ WHO IT IS FOR: ${intake.audience || "(infer)"}
 STRUGGLE: ${intake.struggle || "(infer)"}
 DREAM: ${intake.dream || "(infer)"}
 HESITATION: ${intake.hesitation || "(infer)"}
-PROOF THEY HAVE: ${intake.proof || "(infer / note if thin)"}`;
+PROOF SUPPLIED BY THE SELLER: ${intake.proof || "(none supplied; do not infer proof)"}`;
 
       // Call 1: research pass. Its only job is to extract and structure raw findings,
       // so it gets its own token budget instead of sharing one call with the synthesis below.
@@ -743,7 +764,7 @@ ${avatar ? "AVATAR: " + JSON.stringify(avatar) : "No full avatar on hand, work f
 Per block, 1 to 3 sentences in the market's own language:
 - Pain: a layered pain (general -> specific -> in their life -> deep emotion)${avatar ? "; lean on high-frequency pains, the relationalImpact, and real quotes" : ", lean on the persona's facets for what is actually going on for them"}. Where it fits, name the villain so the pain is not the reader's fault.
 - Promise: a promise ladder toward the desire${avatar ? " and the dreamOutcomes" : ""}, framed as the result${avatar ? " WITHOUT the things in wontDo" : ""}${activePersona ? ", aimed at this persona's outcome specifically" : ""}.
-- Proof: ${avatar ? "use ONLY proofTrusted; soften where proofGaps exist, never fabricate." : "use only proof actually on hand; if none, say plainly that proof is a gap rather than inventing any."}
+- Proof: use ONLY this seller-supplied proof: ${intake.proof || "(none supplied; return an empty Proof string and explain the gap in notes)"}. Audience proof preferences in the avatar describe what would be persuasive; they are not evidence the seller has.
 - Constraints: name the biggest blocking belief/objection${activePersona ? " for this persona" : ""}, then dissolve or sidestep it by acknowledging it, wedging in a counterexample, then reframing.
 - Curiosity: a fresh insight near the insight level; AVOID high-saturation angles; name a mechanism if you can.
 - Conditions: one CTA wrapper that matches the objective.
@@ -752,6 +773,7 @@ Return ONLY JSON, no fences:
       const out = await requestForgeGeneration(prompt);
       const j = parseJSON(out);
       setBlocks({ Pain: j.Pain || "", Promise: j.Promise || "", Proof: j.Proof || "", Constraints: j.Constraints || "", Curiosity: j.Curiosity || "", Conditions: j.Conditions || "" });
+      setSelectedAngle({ family: "", subtype: "" });
       setNotes(j.notes || {});
       markDone("blocks");
     } catch (e) { setError("Could not build the blocks. " + ((e && e.message) || "Unknown error") + ". Try again."); }
@@ -767,12 +789,15 @@ Return ONLY JSON, no fences:
 `Write the six blocks for this offer in the market's language, each 1 to 3 sentences.
 OFFER: ${intake.offer}
 MARKET: ${intake.audience || "infer"}
+PROOF SUPPLIED BY THE SELLER: ${intake.proof || "(none supplied; return an empty Proof string)"}
+NEXT STEP OR OFFER TERMS: ${intake.leadOffer || "(none supplied; do not invent terms)"}
 ${objectiveLine()}
-Blocks: Pain, Promise, Proof, Constraints, Curiosity (name a mechanism), Conditions (a CTA wrapper matching the objective).
+Blocks: Pain, Promise, Proof, Constraints, Curiosity (name a mechanism), Conditions (a CTA wrapper matching the objective). Proof must be empty when seller-supplied proof is absent. Conditions must be empty when no grounded next step or offer term exists.
 Return ONLY JSON: {"Pain":"","Promise":"","Proof":"","Constraints":"","Curiosity":"","Conditions":""}`;
       const out = await requestForgeGeneration(prompt);
       const j = parseJSON(out);
       setBlocks({ Pain: j.Pain || "", Promise: j.Promise || "", Proof: j.Proof || "", Constraints: j.Constraints || "", Curiosity: j.Curiosity || "", Conditions: j.Conditions || "" });
+      setSelectedAngle({ family: "", subtype: "" });
       markDone("blocks");
     } catch (e) { setError("Could not draft. " + ((e && e.message) || "Unknown error") + ". Fill the blocks by hand or try again."); }
     finally { setBusy(""); }
@@ -786,10 +811,8 @@ Return ONLY JSON: {"Pain":"","Promise":"","Proof":"","Constraints":"","Curiosity
     try {
       const claimsContext = `PROMISE BLOCK: ${blocks.Promise || "(not filled)"}
 DREAM OUTCOME(S): ${dreamOutcomes || intake.dream || "(infer)"}`;
-      const proofOnHand = avatar
-        ? `PROOF THE MARKET TRUSTS (you have): ${JSON.stringify(avatar.proofTrusted || [])}
-PROOF GAPS: ${JSON.stringify(avatar.proofGaps || [])}`
-        : `PROOF THEY HAVE: ${intake.proof || "(thin or unspecified)"}`;
+      const proofOnHand = `PROOF SUPPLIED BY THE SELLER: ${intake.proof || "(none supplied; do not recommend wording that implies proof exists)"}
+${avatar ? `AUDIENCE PROOF EXPECTATIONS (research guidance only, not proof on hand): ${JSON.stringify(avatar.proofTrusted || [])}\nPROOF GAPS: ${JSON.stringify(avatar.proofGaps || [])}` : "No audience proof-preference research is available."}`;
       const typesList = PROOF_TYPES.map((p) => `${p.id}: ${p.name} [${p.category}, hard-to-fake ${p.strength}/5${p.underused ? ", underused" : ""}] - ${p.desc}`).join("\n");
       // The taxonomy, voice rule, and task instructions are identical on every call to
       // this function (they only change if the voice or the regulated toggle changes),
@@ -1209,6 +1232,7 @@ Return ONLY JSON, no fences:
     setChosenOffer(o.name);
     setAvatar(null);
     setBlocks({ Pain: "", Promise: "", Proof: "", Constraints: "", Curiosity: "", Conditions: "" });
+    setSelectedAngle({ family: "", subtype: "" });
     setNotes({});
     setRecommended(null);
     setTemplateId("auto");
@@ -1224,6 +1248,7 @@ Return ONLY JSON, no fences:
       craves: j.craves || {}, hooks: Array.isArray(j.hooks) ? j.hooks.slice(0, 3) : [], creativeBrief: j.creativeBrief || "",
       copyVelocity: cv(segs), words: segs.reduce((a, s) => a + wordCount(s.text), 0),
       personaName: activePersona ? activePersona.name : "", awarenessLabel: awStage ? awStage.label : "",
+      angleFamily: selectedAngle.family, angleSubtype: selectedAngle.subtype,
       ...extra,
     };
   }
@@ -1237,6 +1262,7 @@ Return ONLY JSON, no fences:
     if (isSearch) return generateRSA();
     const tpl = activeTemplate;
     if (!tpl) { setError("Pick a template, or hit Recommend."); return; }
+    const exampleLeadBlock = getPrimaryTextExampleBlock(intake.awareness, hasGroundedConditions, tpl.leadBlock, hasGroundedProof);
     setBusy("generate");
     try {
       const prompt =
@@ -1249,20 +1275,21 @@ COPY BLOCKS:
 ${blockText()}
 TEMPLATE: ${tpl.name}
 STRUCTURE: Opening = ${tpl.opening}; Middle = ${tpl.middle}; Close = ${tpl.close}
+Template labels describe rhetorical shape only. They do not supply proof, exclusivity, speed, urgency, deadlines, guarantees, or offer terms.
 
-${placementLine(platform)}
+${buildPlacementGuidance(platform, intake.awareness)}
 
 Output rules:
-- primaryText: ordered segments, each carrying ONE block. The FIRST segment MUST be the Curiosity hook, a complete thought under 120 characters, because it is all that shows before the fold. Then template order with Pain, Constraints, Promise, Proof.
+- primaryText: follow the platform-specific PRIMARY TEXT CONTRACT above. Each segment must add new information and use its dominant Anvil block as the block label.
 - headline: 40 chars max, crystallize the Promise.
 - description: 30 chars max.
 - cta: choose ONE exactly from: ${ctaList.join(", ")}.
 - imageHeadline: 7 words max. imageSubline: 8 words max.
 - creativeBrief: 2 to 4 sentences for whoever shoots or designs the image, not the copywriter. Say what must actually be visible in the frame, one concrete detail tied to this offer or its proof, never a generic stock-photo description like "happy customer" or "person on phone." Say the mood or style in plain terms. Name one specific thing to avoid, the cliche this category always falls into. If you do not have enough to make it concrete, say so plainly instead of padding it with generic direction.
-Apply Polish and use the customer's real voice. Clarity comes first. Use only the blocks that earn their place; never pad or cram to inflate the count. Avoid high-saturation angles.
+Apply Polish and use the customer's real voice. Clarity comes first. Use only the blocks that earn their place; never pad or cram to inflate the count. Avoid high-saturation angles. Before returning JSON, remove every sentence that restates an earlier sentence without adding a distinct fact, implication, objection, or action.
 
 Return ONLY JSON, no fences:
-{"primaryText":[{"block":"Curiosity","text":"..."}],"headline":"","description":"","cta":"${ctaList[0]}","imageHeadline":"","imageSubline":"","craves":{"Clear":4,"Relevant":5,"Accurate":4,"Visual":5,"Expressive":4,"Specific":5},"hooks":["","",""],"creativeBrief":""}
+{"primaryText":[{"block":"${exampleLeadBlock}","text":"..."}],"headline":"","description":"","cta":"${ctaList[0]}","imageHeadline":"","imageSubline":"","craves":{"Clear":4,"Relevant":5,"Accurate":4,"Visual":5,"Expressive":4,"Specific":5},"hooks":["","",""],"creativeBrief":""}
 craves 1-5. Exactly 3 hooks.`;
       const out = await requestForgeGeneration(prompt);
       setResults((r) => [{ id: Date.now(), ...makeAd(parseJSON(out)) }, ...r]);
@@ -1288,8 +1315,8 @@ COPY BLOCKS:
 ${blockText()}
 
 Produce a complete asset set Google can mix and match:
-- 15 distinct headlines, each ${HL_MAX} characters or fewer. Spread across themes: Curiosity hooks, Promise/benefit, Proof/credibility, the offer/CTA (Conditions), and keyword-forward headlines that name the service or brand. At least 4 headlines must contain the main service keyword. Each headline stands alone.
-- 4 descriptions, each ${DESC_MAX} characters or fewer, blending Promise, Proof, and a CTA. For lead generation the CTA is the free ${intake.leadOffer || "consult / inspection / quote"}.
+- 15 distinct headlines, each ${HL_MAX} characters or fewer. Spread across the grounded themes available here: Curiosity hooks, Promise/benefit, keyword-forward service or brand language, and any supplied Proof or Conditions. Use Proof and Conditions only when those blocks contain supplied facts or terms. At least 4 headlines must contain the main service keyword. Each headline stands alone and adds a distinct angle.
+- 4 descriptions, each ${DESC_MAX} characters or fewer, blending distinct grounded material from the available Promise, Proof, and CTA inputs. Omit Proof or Conditions when they are absent. ${isLeadGen ? (intake.leadOffer.trim() ? `For lead generation, use the supplied next step exactly: ${intake.leadOffer.trim()}.` : "For lead generation, no next-step offer was supplied. Use a neutral Learn More or Contact Us CTA and do not invent a free offer or other terms.") : "For direct sale, use an allowed sales CTA without inventing price, availability, or terms."}
 - 2 display paths, each ${PATH_MAX} characters or fewer.
 Respect every character limit. Return ONLY JSON, no fences:
 {"headlines":["",""],"descriptions":["","","",""],"paths":["",""]}`;
@@ -1315,16 +1342,23 @@ Respect every character limit. Return ONLY JSON, no fences:
     if (isSearch) { setError("For Google Search, generate the asset set. Google rotates the headlines and descriptions for you. Use the A/B lab on a feed or video placement."); return; }
     const tpl = activeTemplate;
     if (!tpl) { setError("Pick a template, or hit Recommend."); return; }
+    const exampleLeadBlock = getPrimaryTextExampleBlock(intake.awareness, hasGroundedConditions, tpl.leadBlock, hasGroundedProof);
     setBusy("test");
     try {
       const axis = testAxis, n = testCount;
+      const variesAngle = axis === "Angle (big idea)";
       const rule = {
-        "Hook": "Only the opening hook (the first Curiosity segment) may differ between variants. Make each hook a distinctly different angle. EVERY other field must be identical across all variants.",
+        "Hook": `Only the opening hook (the first ${exampleLeadBlock} segment for this awareness stage) may differ between variants. Make each hook a distinctly different angle. EVERY other field must be identical across all variants.`,
         "Headline": "Only the headline may differ (40 chars max each). EVERY other field identical across variants.",
         "Image headline": "Only imageHeadline and imageSubline may differ. EVERY other field identical across variants.",
         "CTA": `Only the cta may differ; each must be exactly one of: ${ctaList.join(", ")}. EVERY other field identical across variants.`,
-        "Angle (big idea)": "Each variant tests a DIFFERENT big idea using a different angle grid cell (market problem, market solution, your problem, your solution). The whole ad changes to fit the angle.",
+        "Angle (big idea)": "Each variant tests a DIFFERENT big idea using a different angle grid cell. Set angleFamily to curiosity-grid and angleSubtype to exactly one of market_problem, market_solution, your_problem, or your_solution. Use a different subtype for each variant. The whole ad changes to fit the angle.",
       }[axis];
+      const angleMetadataRule = variesAngle
+        ? "Return the exact angleFamily and angleSubtype used by each variant."
+        : selectedAngle.family
+          ? `Every variant preserves the selected angle metadata exactly: angleFamily ${selectedAngle.family}; angleSubtype ${selectedAngle.subtype}.`
+          : "No named angle family or subtype was selected. Return empty strings for angleFamily and angleSubtype instead of inventing labels.";
       const prompt =
 `You are running a single-variable A/B test of ${n} ad variants for a ${platform} ad in the Anvil framework.
 OFFER: ${intake.offer}
@@ -1334,19 +1368,33 @@ ${avatar ? "AVATAR: " + JSON.stringify(avatar) : ""}
 COPY BLOCKS:
 ${blockText()}
 TEMPLATE: ${tpl.name} (Opening ${tpl.opening}; Middle ${tpl.middle}; Close ${tpl.close})
+Template labels describe rhetorical shape only. They do not supply proof, exclusivity, speed, urgency, deadlines, guarantees, or offer terms.
+
+${buildPlacementGuidance(platform, intake.awareness)}
 
 TEST VARIABLE: ${axis}.
 ${rule}
+${angleMetadataRule}
 Variant A is the control. Give each variant a short note on what makes it different.
-Each variant is a full ad. primaryText first segment is the Curiosity hook under 120 chars. cta must be from the allowed list. Keep copy tight.
+Each variant is a full ad. Every primaryText must follow the same platform-specific contract above and begin with the awareness-appropriate block. State each idea once. cta must be from the allowed list.
 
 Return ONLY JSON, no fences:
-{"variable":"${axis}","hypothesis":"one line: what we expect to learn","metric":"the first number to watch","nextTest":"what to test after a winner","variants":[{"label":"A","note":"","primaryText":[{"block":"Curiosity","text":""}],"headline":"","description":"","cta":"${ctaList[0]}","imageHeadline":"","imageSubline":""}]}`;
+{"variable":"${axis}","hypothesis":"one line: what we expect to learn","metric":"the first number to watch","nextTest":"what to test after a winner","variants":[{"label":"A","note":"","angleFamily":"","angleSubtype":"","primaryText":[{"block":"${exampleLeadBlock}","text":""}],"headline":"","description":"","cta":"${ctaList[0]}","imageHeadline":"","imageSubline":""}]}`;
       const out = await requestForgeGeneration(prompt);
       const j = parseJSON(out);
-      const variants = (Array.isArray(j.variants) ? j.variants : []).map((v, i) => ({
-        id: Date.now() + i + 1, ...makeAd(v, { label: v.label || String.fromCharCode(65 + i), note: v.note || "", isControl: i === 0 }),
-      }));
+      const variants = (Array.isArray(j.variants) ? j.variants : []).map((v, i) => {
+        const validGridSubtype = CURIOSITY_QUADRANTS.some((quadrant) => quadrant.id === v.angleSubtype);
+        return {
+          id: Date.now() + i + 1,
+          ...makeAd(v, {
+            label: v.label || String.fromCharCode(65 + i),
+            note: v.note || "",
+            isControl: i === 0,
+            angleFamily: variesAngle ? (validGridSubtype ? "curiosity-grid" : "") : selectedAngle.family,
+            angleSubtype: variesAngle ? (validGridSubtype ? v.angleSubtype : "") : selectedAngle.subtype,
+          }),
+        };
+      });
       setResults((r) => [{ kind: "test", id: Date.now(), platform, variable: j.variable || axis, hypothesis: j.hypothesis || "", metric: j.metric || "", nextTest: j.nextTest || "", variants, personaName: activePersona ? activePersona.name : "" }, ...r]);
       markDone("test"); scrollResults();
     } catch (e) { setError("Could not build the test set. " + ((e && e.message) || "Unknown error") + ". Try fewer variants, or try again."); }
@@ -1490,13 +1538,18 @@ Return ONLY JSON, no fences:
           </div>
           <h1 style={{ margin: "4px 0 0", fontSize: 38, fontWeight: 800, letterSpacing: "-.03em", lineHeight: 1.02 }}>Anvil</h1>
           <p style={{ margin: "10px 0 0", maxWidth: 700, color: "#c9c9ce", fontSize: 14.5, lineHeight: 1.5 }}>
-            From your offer to finished ads, A/B test sets, or a full search ad asset set, tuned to your objective and voice, previewed per placement. Built for Meta, TikTok, YouTube Shorts, and Google Search.
+            From your offer to finished ads, A/B test sets, or a full search ad asset set, tuned to your objective and voice, previewed per placement. Built for Meta, LinkedIn, TikTok, YouTube Shorts, and Google Search.
           </p>
         </div>
       </header>
 
       <main style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 22px 0" }}>
-        <div className="cbae-grid">
+        <AnvilMarketwareExtensions
+          selectedPlatform={platform}
+          onSelectPlatform={setPlatform}
+          draftContext={{ objective: intake.objective, audience: intake.audience, offer: intake.offer }}
+        />
+        <div id="anvil-generator-workspace" className="cbae-grid">
           {/* LEFT */}
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <section style={card}>
@@ -1936,7 +1989,7 @@ Return ONLY JSON, no fences:
                   <div key={i} style={{ borderTop: i > 0 ? "1px solid #f0f0f2" : "none", paddingTop: i > 0 ? 10 : 0, marginTop: i > 0 ? 10 : 0 }}>
                     <div style={{ marginBottom: 4 }}><Chip text={q ? q.label : a.quadrantId} color={BLOCKS.Curiosity.color} /></div>
                     <div style={{ fontSize: 13, color: "#1f1f22", marginBottom: 6 }}>{a.angle}</div>
-                    {isYours && <button style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }} onClick={() => setBlock("Curiosity", a.angle)}>Use in Curiosity block</button>}
+                    {isYours && <button style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }} onClick={() => applyCuriosityAngle(a.angle, "curiosity-grid", a.quadrantId)}>Use in Curiosity block</button>}
                   </div>
                 );
               })}
@@ -1969,7 +2022,7 @@ Return ONLY JSON, no fences:
                       {fam && fam.safeForTrust && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#1B7A43", border: "1px solid #1B7A43", borderRadius: 6, padding: "1px 6px" }}>safe for trust markets</span>}
                     </div>
                     <div style={{ fontSize: 13, color: "#1f1f22", marginBottom: 6 }}>{a.angle}</div>
-                    <button style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }} onClick={() => setBlock("Curiosity", a.angle)}>Use in Curiosity block</button>
+                    <button style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }} onClick={() => applyCuriosityAngle(a.angle, a.familyId, a.subtype)}>Use in Curiosity block</button>
                   </div>
                 );
               })}
@@ -2260,10 +2313,12 @@ function AdPreview({ r, nested }) {
   const [open, setOpen] = useState(false);
   const [showBlocks, setShowBlocks] = useState(false);
   const [anatomy, setAnatomy] = useState(false);
-  const isFeed = FEED.includes(r.platform);
+  const isFeed = isFeedPlatform(r.platform);
+  const isLinkedIn = r.platform === "LinkedIn";
   const plainText = r.primaryText.map((s) => s.text).join(" ");
   const copy = (txt) => { try { navigator.clipboard.writeText(txt); } catch (e) {} };
-  const allFields = `PRIMARY TEXT:\n${plainText}\n\nHEADLINE: ${r.headline}\nDESCRIPTION: ${r.description}\nCTA: ${r.cta}\nIMAGE: ${r.imageHeadline} / ${r.imageSubline}`;
+  const exportRecord = toAdExportRecord(r);
+  const allFields = `PLATFORM: ${r.platform}\nPERSONA: ${r.personaName || ""}\nAWARENESS: ${r.awarenessLabel || ""}\nANGLE FAMILY: ${r.angleFamily || ""}\nANGLE SUBTYPE: ${r.angleSubtype || ""}\nPRIMARY TEXT:\n${plainText}\n\nHEADLINE: ${r.headline}\nDESCRIPTION: ${r.description}\nCTA: ${r.cta}\nIMAGE: ${r.imageHeadline} / ${r.imageSubline}`;
   const ctl = { fontFamily: "inherit", fontSize: 12, fontWeight: 600, padding: "6px 10px", borderRadius: 7, border: "1px solid #d4d4d8", background: "#fff", color: "#141414", cursor: "pointer" };
   const Zone = ({ n, label }) => anatomy ? (
     <div style={{ padding: "8px 12px 2px", display: "flex", alignItems: "center", gap: 6 }}>
@@ -2276,7 +2331,7 @@ function AdPreview({ r, nested }) {
     if (showBlocks) {
       return (
         <div style={{ padding: "0 12px 10px" }}>
-          <div style={{ fontSize: 11.5, color: "#65676b", lineHeight: 1.5, margin: "2px 0 8px" }}>These six blocks stack to form your primary text, the copy above the image. The first block is the hook.</div>
+          <div style={{ fontSize: 11.5, color: "#65676b", lineHeight: 1.5, margin: "2px 0 8px" }}>These selected blocks shape the primary text. Each segment should add a distinct idea, and the first segment is the awareness-appropriate hook.</div>
           {r.primaryText.map((s, i) => {
             const b = BLOCKS[s.block] || BLOCKS.Curiosity;
             return (
@@ -2314,6 +2369,7 @@ function AdPreview({ r, nested }) {
           {isFeed && <button style={ctl} onClick={() => setAnatomy((s) => !s)}>{anatomy ? "Hide" : "Show"} anatomy</button>}
           <button style={ctl} onClick={() => copy(plainText)}>Copy text</button>
           <button style={ctl} onClick={() => copy(allFields)}>Copy all fields</button>
+          <button style={ctl} onClick={() => copy(JSON.stringify(exportRecord, null, 2))}>Copy JSON</button>
           <div style={{ textAlign: "right", marginLeft: 4 }} title="Coverage is blocks per 100 words. A thinking aid, not a quality score.">
             <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1, color: "#9a9aa0" }}>{r.copyVelocity}</div>
             <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "#9a9aa0" }}>Coverage</div>
@@ -2325,17 +2381,17 @@ function AdPreview({ r, nested }) {
         <div style={{ background: "#eef0f2", borderRadius: 12, padding: 14, display: "flex", justifyContent: "center" }}>
           <div style={{ width: "100%", maxWidth: 420, background: "#fff", border: "1px solid #dadde1", borderRadius: 8, overflow: "hidden", color: "#050505" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 12px 8px" }}>
-              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#141414", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>{initials(r.brand)}</div>
+              <div style={{ width: 40, height: 40, borderRadius: isLinkedIn ? 4 : "50%", background: "#141414", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>{initials(r.brand)}</div>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{r.brand}</div>
-                <div style={{ fontSize: 12, color: "#65676b" }}>{r.platform === "Instagram" ? "Sponsored" : "Sponsored · 🌐"}</div>
+                <div style={{ fontSize: 12, color: "#65676b" }}>{isLinkedIn ? "Promoted" : r.platform === "Instagram" ? "Sponsored" : "Sponsored · 🌐"}</div>
               </div>
               <div style={{ marginLeft: "auto", color: "#65676b", fontWeight: 700 }}>···</div>
             </div>
-            <Zone n={1} label="Primary text · your 6 blocks stacked" />
+            <Zone n={1} label="Primary text · selected blocks, one idea each" />
             {body()}
             <Zone n={2} label="Creative · your image, with text overlay" />
-            <div style={{ aspectRatio: "1 / 1", background: "#101012", display: "flex", flexDirection: "column", justifyContent: "center", padding: 26, color: "#fff", position: "relative" }}>
+            <div style={{ aspectRatio: isLinkedIn ? "1.91 / 1" : "1 / 1", background: "#101012", display: "flex", flexDirection: "column", justifyContent: "center", padding: 26, color: "#fff", position: "relative" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 8, display: "flex" }}>{BLOCK_NAMES.map((n) => <span key={n} style={{ flex: 1, background: BLOCKS[n].color }} />)}</div>
               <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.15, letterSpacing: "-.01em" }}>{r.imageHeadline || r.headline}</div>
               {r.imageSubline ? <div style={{ fontSize: 14, color: "#b9b9be", marginTop: 10 }}>{r.imageSubline}</div> : null}
@@ -2350,8 +2406,8 @@ function AdPreview({ r, nested }) {
               </div>
               <button style={{ flex: "0 0 auto", background: "#e4e6eb", color: "#050505", fontWeight: 700, fontSize: 14, padding: "8px 14px", borderRadius: 6, border: "none", cursor: "pointer" }}>{r.cta}</button>
             </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", fontSize: 13, color: "#65676b", borderBottom: "1px solid #ced0d4" }}><span>👍❤️ 1.2K</span><span>184 comments · 37 shares</span></div>
-            <div style={{ display: "flex", padding: "4px 6px", fontSize: 14, color: "#65676b", fontWeight: 600 }}>{["Like", "Comment", "Share"].map((a) => <div key={a} style={{ flex: 1, textAlign: "center", padding: 8 }}>{a}</div>)}</div>
+            {!isLinkedIn && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", fontSize: 13, color: "#65676b", borderBottom: "1px solid #ced0d4" }}><span>👍❤️ 1.2K</span><span>184 comments · 37 shares</span></div>}
+            <div style={{ display: "flex", padding: "4px 6px", fontSize: 14, color: "#65676b", fontWeight: 600 }}>{(isLinkedIn ? ["Like", "Comment", "Repost", "Send"] : ["Like", "Comment", "Share"]).map((a) => <div key={a} style={{ flex: 1, textAlign: "center", padding: 8 }}>{a}</div>)}</div>
           </div>
         </div>
       ) : <FieldsCard r={r} body={body} />}
